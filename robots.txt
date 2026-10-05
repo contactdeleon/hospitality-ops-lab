@@ -1,2 +1,3 @@
 User-agent: *
 Allow: /
+Sitemap: https://hospitality-ops-lab.vercel.app/sitemap.xml
