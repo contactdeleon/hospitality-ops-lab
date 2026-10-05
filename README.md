@@ -2,10 +2,19 @@
 
 Practical operating systems, checklists, tools and implementation support for restaurants, hotels and resorts.
 
+Public site: https://hospitality-ops-lab.vercel.app
+
 ## Current public resources
+- Hospitality Operations Review
 - Restaurant Opening & Closing Checklist
 - Hotel & Resort Shift Handoff Checklist
-- Labor opportunity calculator
+- Manager Daily Operating Snapshot
+
+## Paid offers
+- Hospitality Manager Toolkit — $39 one-time
+- Hospitality Performance Desk — $299/month
+
+Hospitality Ops Lab is operated by Palm Springs Podcast Studio.
 
 ## Deployment
-Static site intended for Vercel. Files are served from the repository root.
+Static site deployed to Vercel from the `main` branch of this repository. Files are served from the repository root with clean URLs enabled.
