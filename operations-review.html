@@ -17,7 +17,7 @@
 <div class="card q"><label>10. Closing the loop<small>Recurring problems result in process changes instead of repeated firefighting.</small></label><select data-q><option value="1">1 — Repeat constantly</option><option value="2">2 — Often repeat</option><option value="3">3 — Sometimes fixed</option><option value="4">4 — Usually resolved</option><option value="5">5 — Root cause culture</option></select></div>
 </div>
 <button class="button" onclick="scoreAudit()">Calculate score</button><a class="button secondary" href="index.html">Back to site</a>
-<div class="result" id="result"><div class="eyebrow">Your operating-system score</div><div class="score" id="score"></div><h2 id="band"></h2><p id="copy"></p><a id="emailLink" class="button" href="#">Email this review for follow-up</a></div>
+<div class="result" id="result"><div class="eyebrow">Your operating-system score</div><div class="score" id="score"></div><h2 id="band"></h2><p id="copy"></p><div class="card" style="margin-top:18px"><strong>Recommended next step</strong><p id="nextCopy"></p><a id="nextLink" class="button" href="#"></a><a id="emailLink" class="button secondary" href="#">Email this review for follow-up</a></div></div>
 </div></main><footer><div class="wrap">© 2026 Hospitality Ops Lab · Operated by Palm Springs Podcast Studio<br><br><a href="terms.html">Terms</a> · <a href="privacy.html">Privacy</a> · <a href="refund-delivery.html">Refunds, Cancellations & Delivery</a></div></footer>
 <script>
 function scoreAudit(){
@@ -31,6 +31,10 @@ function scoreAudit(){
  document.getElementById('score').textContent=total+' / 50';
  document.getElementById('band').textContent=band;
  document.getElementById('copy').textContent=copy;
+ const nextCopy=document.getElementById('nextCopy'),nextLink=document.getElementById('nextLink');
+ if(total<=34){nextCopy.textContent='Start by installing a simple daily management system and standardizing the most failure-prone handoffs.';nextLink.href='manager-toolkit.html';nextLink.textContent='See the $39 Manager Toolkit'}
+ else if(total<=42){nextCopy.textContent='Your foundation is solid enough for targeted operating support, KPI review and management-document improvement.';nextLink.href='performance-desk.html';nextLink.textContent='See Performance Desk'}
+ else {nextCopy.textContent='Optimization is the opportunity now: better management visibility, automation and recurring operating review.';nextLink.href='performance-desk.html';nextLink.textContent='See Performance Desk'}
  const property=document.getElementById('property').value||'Not provided';
  const type=document.getElementById('type').value;
  const body='Property: '+property+'\nOperation type: '+type+'\nOperations review score: '+total+'/50\nBand: '+band+'\n\nI would like to discuss the highest-impact improvements.';
