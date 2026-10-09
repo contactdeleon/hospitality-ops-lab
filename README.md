@@ -12,8 +12,8 @@ Public site: https://hospitality-ops-lab.vercel.app
 - Vacation Rental Turnover & Guest Readiness Checklist
 
 ## Offers
-- Hospitality Manager Toolkit — available by request
-- Hospitality Performance Desk — recurring support by consultation
+- Hospitality Manager Toolkit — $39 one-time
+- Hospitality Performance Desk — $299/month
 
 Hospitality Ops Lab is operated by Palm Springs Podcast Studio.
 
