@@ -2,7 +2,7 @@
 // Required secrets: GATEWAY_HMAC_KEY, GITHUB_ISSUES_TOKEN
 // Required KV namespace binding: HANDOFF_IDS
 const AGENTS = new Set(["gemini","meta","grok","chatgpt"]);
-const TYPES = new Set(["research","growth","review","status","blocker"]);
+const STATUSES = new Set(["proposed","in_progress","complete","blocked"]);
 const enc = new TextEncoder();
 const json = (body,status=200) => new Response(JSON.stringify(body),{status,headers:{"content-type":"application/json; charset=utf-8","cache-control":"no-store","x-content-type-options":"nosniff"}});
 function hex(bytes){return [...new Uint8Array(bytes)].map(b=>b.toString(16).padStart(2,"0")).join("");}
@@ -36,14 +36,14 @@ export default {
   if(!(await verify(request,env.GATEWAY_HMAC_KEY,body)))return json({error:"unauthorized"},401);
   let payload;try{payload=JSON.parse(body)}catch{return json({error:"invalid_json"},400)}
   if(!payload || typeof payload!=="object" || Array.isArray(payload))return json({error:"invalid_payload"},400);
-  const {agent,task_id,type,summary,sources,created_at}=payload;
-  if(!AGENTS.has(agent)||!TYPES.has(type)||!safe(task_id,80)||! /^[a-zA-Z0-9_-]+$/.test(task_id)||!safe(summary,3500)||!Array.isArray(sources)||sources.length>8||!sources.every(s=>safe(s,350)&&/^https:\/\//.test(s))||!safe(created_at,40)||!Number.isFinite(Date.parse(created_at))||Math.abs(Date.now()-Date.parse(created_at))>86400000)return json({error:"invalid_payload"},400);
-  if(hasSensitive(summary)||sources.some(hasSensitive))return json({error:"sensitive_content_detected"},422);
-  const id=agent+":"+task_id;
+  const {agent_role,task_id,status,summary,evidence,blockers,next_action,director_approval_required,created_at}=payload;
+  if(!AGENTS.has(agent_role)||!STATUSES.has(status)||!safe(task_id,80)||! /^[a-zA-Z0-9_-]+$/.test(task_id)||!safe(summary,3500)||!Array.isArray(evidence)||evidence.length>8||!evidence.every(s=>safe(s,350))||!safe(blockers,1000)||!safe(next_action,1000)||typeof director_approval_required!=="boolean"||!safe(created_at,40)||!Number.isFinite(Date.parse(created_at))||Math.abs(Date.now()-Date.parse(created_at))>86400000)return json({error:"invalid_payload"},400);
+  if([summary,blockers,next_action,...evidence].some(hasSensitive))return json({error:"sensitive_content_detected"},422);
+  const id=agent_role+":"+task_id;
   // KV limits repeat submissions; simultaneous first requests can race. GitHub write remains scoped.
   if(await env.HANDOFF_IDS.get(id))return json({status:"duplicate",task_id},409);
   await env.HANDOFF_IDS.put(id,"pending",{expirationTtl:86400});
-  const comment="## AI HANDOFF — "+escapeMd(agent.toUpperCase())+" / "+escapeMd(type)+"\n\n**Task:** "+escapeMd(task_id)+"\n**Created:** "+escapeMd(created_at)+"\n\n"+escapeMd(summary)+"\n\n**Sources:**\n"+(sources.length?sources.map(s=>"- "+s).join("\n"):"- None provided")+"\n\n_Received through authenticated inbound gateway; claims require independent verification._";
+  const comment="## AI HANDOFF — "+escapeMd(agent_role.toUpperCase())+" / "+escapeMd(status)+"\\n\\n**Task:** "+escapeMd(task_id)+"\\n**Created:** "+escapeMd(created_at)+"\\n**Director approval required:** "+(director_approval_required?"YES":"NO")+"\\n\\n**Summary:** "+escapeMd(summary)+"\\n\\n**Evidence:**\\n"+(evidence.length?evidence.map(s=>"- "+escapeMd(s)).join("\\n"):"- None provided")+"\\n\\n**Blockers:** "+escapeMd(blockers)+"\\n\\n**Next action:** "+escapeMd(next_action)+"\\n\\n_Authenticated handoff; agent attribution is sender-asserted and claims require verification._";
   try{
    const response=await fetch("https://api.github.com/repos/contactdeleon/hospitality-ops-lab/issues/1/comments",{method:"POST",headers:{"authorization":"Bearer "+env.GITHUB_ISSUES_TOKEN,"accept":"application/vnd.github+json","x-github-api-version":"2022-11-28","user-agent":"ai-superfriends-gateway","content-type":"application/json"},body:JSON.stringify({body:comment})});
    if(!response.ok){await env.HANDOFF_IDS.delete(id);return json({error:"ledger_write_failed",status:response.status},502);}
