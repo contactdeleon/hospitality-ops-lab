@@ -1,0 +1,12 @@
+name = "ai-superfriends-gateway"
+main = "src/index.js"
+compatibility_date = "2026-10-16"
+
+# Bind an existing or new Cloudflare KV namespace ID before deployment.
+# [[kv_namespaces]]
+# binding = "HANDOFF_IDS"
+# id = "REPLACE_WITH_REAL_KV_NAMESPACE_ID"
+
+# Secrets (configure in Cloudflare, never commit values):
+# GATEWAY_HMAC_KEY
+# GITHUB_ISSUES_TOKEN
