@@ -1,0 +1,55 @@
+name: Verify AI Superfriends Gateway
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  gateway-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Signed gateway handoff test
+        env:
+          GATEWAY_HMAC_KEY: ${{ secrets.GATEWAY_HMAC_KEY }}
+          GATEWAY_URL: https://ai-superfriends-gateway.contactdeleon.workers.dev/v1/handoff
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          if [ -z "$GATEWAY_HMAC_KEY" ]; then
+            echo "::error::Add GATEWAY_HMAC_KEY as a GitHub Actions repository secret. Use the exact same value configured in Cloudflare; never paste it into issues or logs."
+            exit 1
+          fi
+          python3 - <<'PY'
+          import datetime,hashlib,hmac,json,os,time,urllib.error,urllib.request
+          now=datetime.datetime.now(datetime.timezone.utc)
+          task_id="CTOO-GATEWAY-VERIFY-"+os.environ["RUN_ID"]+"-"+os.environ["RUN_ATTEMPT"]
+          payload={
+            "agent_role":"chatgpt","task_id":task_id,"status":"complete",
+            "summary":"Automated signed Cloudflare gateway to GitHub handoff verification.",
+            "evidence":["GitHub Actions run "+os.environ["RUN_ID"]],
+            "blockers":"None","next_action":"Confirm GitHub Issue #1 notification arrives in Slack.",
+            "director_approval_required":False,"created_at":now.isoformat().replace("+00:00","Z")
+          }
+          body=json.dumps(payload,separators=(",",":"),ensure_ascii=False).encode()
+          timestamp=str(int(time.time()))
+          signature=hmac.new(os.environ["GATEWAY_HMAC_KEY"].encode(),timestamp.encode()+b"."+body,hashlib.sha256).hexdigest()
+          request=urllib.request.Request(os.environ["GATEWAY_URL"],data=body,headers={
+            "content-type":"application/json",
+            "x-ai-timestamp":timestamp,
+            "x-ai-signature":"sha256="+signature
+          },method="POST")
+          try:
+            with urllib.request.urlopen(request,timeout=20) as response:
+              result=json.load(response)
+              if response.status!=201 or result.get("status")!="accepted" or not result.get("ledger_url","").startswith("https://github.com/contactdeleon/hospitality-ops-lab/issues/1#issuecomment-"):
+                raise RuntimeError("Gateway did not return expected accepted response and issue comment URL")
+              print("Gateway handoff accepted.")
+              print("GitHub comment: "+result["ledger_url"])
+              with open(os.environ["GITHUB_STEP_SUMMARY"],"a") as f:
+                f.write("### Gateway signed handoff verified\\n\\nGitHub comment: "+result["ledger_url"]+"\\n\\nCheck #deleon-group-ai-hq for the corresponding notification.\\n")
+          except urllib.error.HTTPError as e:
+            print("Gateway returned HTTP "+str(e.code))
+            print(e.read(1000).decode(errors="replace"))
+            raise
+          PY
