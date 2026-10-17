@@ -31,7 +31,7 @@ jobs:
           event=os.environ["EVENT_NAME"]
           action=os.environ["EVENT_ACTION"]
           actor=os.environ["ACTOR"]
-          text=f"AI Superfriends | GitHub Issue #1 updated\\nEvent: {event} ({action})\\nBy: {actor}\\n<{url}|View update>"
+          text=f"AI Superfriends | GitHub Issue #1 updated\nEvent: {event} ({action})\nBy: {actor}\n<{url}|View update>"
           print(json.dumps({"text":text}))
           PY
           curl --fail --silent --show-error --retry 2 --max-time 20 \
