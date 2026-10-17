@@ -34,24 +34,43 @@ jobs:
           body=json.dumps(payload,separators=(",",":"),ensure_ascii=False).encode()
           timestamp=str(int(time.time()))
           signature=hmac.new(os.environ["GATEWAY_HMAC_KEY"].encode(),timestamp.encode()+b"."+body,hashlib.sha256).hexdigest()
-          request=urllib.request.Request(os.environ["GATEWAY_URL"],data=body,headers={
-            "content-type":"application/json",
-            "accept":"application/json",
-            "user-agent":"DeLeonGroup-GatewayVerifier/1.0 (+https://github.com/contactdeleon/hospitality-ops-lab)",
-            "x-ai-timestamp":timestamp,
-            "x-ai-signature":"sha256="+signature
-          },method="POST")
-          try:
-            with urllib.request.urlopen(request,timeout=20) as response:
-              result=json.load(response)
-              if response.status!=201 or result.get("status")!="accepted" or not result.get("ledger_url","").startswith("https://github.com/contactdeleon/hospitality-ops-lab/issues/1#issuecomment-"):
-                raise RuntimeError("Gateway did not return expected accepted response and issue comment URL")
-              print("Gateway handoff accepted.")
-              print("GitHub comment: "+result["ledger_url"])
-              with open(os.environ["GITHUB_STEP_SUMMARY"],"a") as f:
-                f.write("### Gateway signed handoff verified\\n\\nGitHub comment: "+result["ledger_url"]+"\\n\\nCheck #deleon-group-ai-hq for the corresponding notification.\\n")
-          except urllib.error.HTTPError as e:
-            print("Gateway returned HTTP "+str(e.code))
-            print(e.read(1000).decode(errors="replace"))
-            raise
+          with open("/tmp/gateway-payload.json","wb") as file:
+            file.write(body)
+          with open("/tmp/gateway-auth.env","w") as file:
+            file.write("AI_TIMESTAMP="+timestamp+"\n")
+            file.write("AI_SIGNATURE=sha256="+signature+"\n")
           PY
+          source /tmp/gateway-auth.env
+          http_code=$(curl --silent --show-error --max-time 25 --retry 1 \\
+            -D /tmp/gateway-headers.txt -o /tmp/gateway-response.json -w '%{http_code}' \\
+            -A 'Mozilla/5.0 (compatible; DeLeonGatewayVerification/1.0)' \\
+            -H 'Content-Type: application/json' -H 'Accept: application/json' \\
+            -H "x-ai-timestamp: $AI_TIMESTAMP" -H "x-ai-signature: $AI_SIGNATURE" \\
+            --data-binary @/tmp/gateway-payload.json "$GATEWAY_URL")
+          echo "Gateway HTTP status: $http_code"
+          if [ "$http_code" != 201 ]; then
+            echo "::error::Gateway test failed with HTTP $http_code"
+            grep -iE '^(cf-ray|server|content-type):' /tmp/gateway-headers.txt || true
+            if grep -q '"error"' /tmp/gateway-response.json; then
+              python3 - <<'PYERR'
+          import json
+          try:
+            with open("/tmp/gateway-response.json") as f: data=json.load(f)
+            print("Gateway error:",data.get("error","unknown"))
+          except Exception: print("Non-JSON response from edge (likely blocked before Worker)")
+          PYERR
+            else
+              echo "Non-JSON response from edge (likely blocked before Worker)"
+            fi
+            exit 1
+          fi
+          python3 - <<'PYRESULT'
+          import json,os
+          with open("/tmp/gateway-response.json") as f: result=json.load(f)
+          url=result.get("ledger_url","")
+          if result.get("status")!="accepted" or not url.startswith("https://github.com/contactdeleon/hospitality-ops-lab/issues/1#issuecomment-"):
+            raise SystemExit("Unexpected gateway response")
+          print("Gateway handoff accepted:",url)
+          with open(os.environ["GITHUB_STEP_SUMMARY"],"a") as f:
+            f.write("### Signed gateway handoff verified\\n\\nGitHub comment: "+url+"\\n\\nVerify matching Slack notification separately.\\n")
+          PYRESULT
