@@ -1,0 +1,40 @@
+name: Issue 1 to Slack
+on:
+  issue_comment:
+    types: [created, edited]
+  issues:
+    types: [edited]
+permissions:
+  contents: read
+jobs:
+  notify:
+    if: github.event.issue.number == 1
+    runs-on: ubuntu-latest
+    steps:
+      - name: Notify Slack
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_ACTION: ${{ github.event.action }}
+          ISSUE_URL: ${{ github.event.issue.html_url }}
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+          COMMENT_URL: ${{ github.event.comment.html_url }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          if [ -z "$SLACK_WEBHOOK_URL" ]; then
+            echo "::error::Missing SLACK_WEBHOOK_URL repository secret"
+            exit 1
+          fi
+          python3 - <<'PY' > /tmp/slack-payload.json
+          import json,os
+          url=os.environ.get("COMMENT_URL") or os.environ["ISSUE_URL"]
+          event=os.environ["EVENT_NAME"]
+          action=os.environ["EVENT_ACTION"]
+          actor=os.environ["ACTOR"]
+          text=f"AI Superfriends | GitHub Issue #1 updated\nEvent: {event} ({action})\nBy: {actor}\n<{url}|View update>"
+          print(json.dumps({"text":text}))
+          PY
+          curl --fail --silent --show-error --retry 2 --max-time 20 \
+            -H 'Content-type: application/json' \
+            --data-binary @/tmp/slack-payload.json \
+            "$SLACK_WEBHOOK_URL"
