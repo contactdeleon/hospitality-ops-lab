@@ -36,6 +36,8 @@ jobs:
           signature=hmac.new(os.environ["GATEWAY_HMAC_KEY"].encode(),timestamp.encode()+b"."+body,hashlib.sha256).hexdigest()
           request=urllib.request.Request(os.environ["GATEWAY_URL"],data=body,headers={
             "content-type":"application/json",
+            "accept":"application/json",
+            "user-agent":"DeLeonGroup-GatewayVerifier/1.0 (+https://github.com/contactdeleon/hospitality-ops-lab)",
             "x-ai-timestamp":timestamp,
             "x-ai-signature":"sha256="+signature
           },method="POST")
