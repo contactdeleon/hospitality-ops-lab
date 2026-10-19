@@ -16,61 +16,72 @@ jobs:
           RUN_ATTEMPT: ${{ github.run_attempt }}
         run: |
           set -euo pipefail
-          if [ -z "$GATEWAY_HMAC_KEY" ]; then
-            echo "::error::Add GATEWAY_HMAC_KEY as a GitHub Actions repository secret. Use the exact same value configured in Cloudflare; never paste it into issues or logs."
-            exit 1
-          fi
           python3 - <<'PY'
-          import datetime,hashlib,hmac,json,os,time,urllib.error,urllib.request
-          now=datetime.datetime.now(datetime.timezone.utc)
-          task_id="CTOO-GATEWAY-VERIFY-"+os.environ["RUN_ID"]+"-"+os.environ["RUN_ATTEMPT"]
-          payload={
-            "agent_role":"chatgpt","task_id":task_id,"status":"complete",
-            "summary":"Automated signed Cloudflare gateway to GitHub handoff verification.",
-            "evidence":["GitHub Actions run "+os.environ["RUN_ID"]],
-            "blockers":"None","next_action":"Confirm GitHub Issue #1 notification arrives in Slack.",
-            "director_approval_required":False,"created_at":now.isoformat().replace("+00:00","Z")
-          }
-          body=json.dumps(payload,separators=(",",":"),ensure_ascii=False).encode()
-          timestamp=str(int(time.time()))
-          signature=hmac.new(os.environ["GATEWAY_HMAC_KEY"].encode(),timestamp.encode()+b"."+body,hashlib.sha256).hexdigest()
-          with open("/tmp/gateway-payload.json","wb") as file:
-            file.write(body)
-          with open("/tmp/gateway-auth.env","w") as file:
-            file.write("AI_TIMESTAMP="+timestamp+"\n")
-            file.write("AI_SIGNATURE=sha256="+signature+"\n")
-          PY
-          source /tmp/gateway-auth.env
-          http_code=$(curl --silent --show-error --max-time 25 --retry 1 \\
-            -D /tmp/gateway-headers.txt -o /tmp/gateway-response.json -w '%{http_code}' \\
-            -A 'Mozilla/5.0 (compatible; DeLeonGatewayVerification/1.0)' \\
-            -H 'Content-Type: application/json' -H 'Accept: application/json' \\
-            -H "x-ai-timestamp: $AI_TIMESTAMP" -H "x-ai-signature: $AI_SIGNATURE" \\
-            --data-binary @/tmp/gateway-payload.json "$GATEWAY_URL")
-          echo "Gateway HTTP status: $http_code"
-          if [ "$http_code" != 201 ]; then
-            echo "::error::Gateway test failed with HTTP $http_code"
-            grep -iE '^(cf-ray|server|content-type):' /tmp/gateway-headers.txt || true
-            if grep -q '"error"' /tmp/gateway-response.json; then
-              python3 - <<'PYERR'
+          import datetime
+          import hashlib
+          import hmac
           import json
+          import os
+          import time
+          import urllib.error
+          import urllib.request
+
+          now = datetime.datetime.now(datetime.timezone.utc)
+          task_id = "CTOO-GATEWAY-VERIFY-" + os.environ["RUN_ID"] + "-" + os.environ["RUN_ATTEMPT"]
+          payload = {
+              "agent_role": "chatgpt",
+              "task_id": task_id,
+              "status": "complete",
+              "summary": "Automated signed Cloudflare gateway to GitHub handoff verification.",
+              "evidence": ["GitHub Actions run " + os.environ["RUN_ID"]],
+              "blockers": "None",
+              "next_action": "Confirm GitHub Issue #1 notification arrives in Slack.",
+              "director_approval_required": False,
+              "created_at": now.isoformat().replace("+00:00", "Z"),
+          }
+          body = json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode()
+          timestamp = str(int(time.time()))
+          signature = hmac.new(
+              os.environ["GATEWAY_HMAC_KEY"].encode(),
+              timestamp.encode() + b"." + body,
+              hashlib.sha256,
+          ).hexdigest()
+          request = urllib.request.Request(
+              os.environ["GATEWAY_URL"],
+              data=body,
+              headers={
+                  "Content-Type": "application/json",
+                  "Accept": "application/json",
+                  "User-Agent": "DeLeonGroup-GatewayVerifier/1.0",
+                  "x-ai-timestamp": timestamp,
+                  "x-ai-signature": "sha256=" + signature,
+              },
+              method="POST",
+          )
           try:
-            with open("/tmp/gateway-response.json") as f: data=json.load(f)
-            print("Gateway error:",data.get("error","unknown"))
-          except Exception: print("Non-JSON response from edge (likely blocked before Worker)")
-          PYERR
-            else
-              echo "Non-JSON response from edge (likely blocked before Worker)"
-            fi
-            exit 1
-          fi
-          python3 - <<'PYRESULT'
-          import json,os
-          with open("/tmp/gateway-response.json") as f: result=json.load(f)
-          url=result.get("ledger_url","")
-          if result.get("status")!="accepted" or not url.startswith("https://github.com/contactdeleon/hospitality-ops-lab/issues/1#issuecomment-"):
-            raise SystemExit("Unexpected gateway response")
-          print("Gateway handoff accepted:",url)
-          with open(os.environ["GITHUB_STEP_SUMMARY"],"a") as f:
-            f.write("### Signed gateway handoff verified\\n\\nGitHub comment: "+url+"\\n\\nVerify matching Slack notification separately.\\n")
-          PYRESULT
+              with urllib.request.urlopen(request, timeout=20) as response:
+                  result = json.load(response)
+                  if (
+                      response.status != 201
+                      or result.get("status") != "accepted"
+                      or not result.get("ledger_url", "").startswith(
+                          "https://github.com/contactdeleon/hospitality-ops-lab/issues/1#issuecomment-"
+                      )
+                  ):
+                      raise SystemExit("Gateway returned an unexpected acceptance response.")
+                  comment_url = result["ledger_url"]
+                  print("Gateway handoff accepted.")
+                  print("GitHub comment: " + comment_url)
+                  with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+                      summary.write(
+                          "### Gateway signed handoff verified\n\n"
+                          + "GitHub comment: " + comment_url + "\n\n"
+                          + "Check #deleon-group-ai-hq for the matching notification.\n"
+                      )
+          except urllib.error.HTTPError as error:
+              print("Gateway returned HTTP " + str(error.code))
+              raise SystemExit(1)
+          except urllib.error.URLError as error:
+              print("Gateway request failed: " + type(error.reason).__name__)
+              raise SystemExit(1)
+          PY
