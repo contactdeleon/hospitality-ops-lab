@@ -69,5 +69,4 @@ export default {
    return json({status:"accepted",task_id,ledger_url:result.html_url},201);
   }catch{await env.HANDOFF_IDS.delete(id);return json({error:"ledger_unavailable"},502)}
  }
-}
 };
