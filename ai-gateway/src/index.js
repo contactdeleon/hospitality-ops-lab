@@ -43,7 +43,24 @@ export default {
   // KV limits repeat submissions; simultaneous first requests can race. GitHub write remains scoped.
   if(await env.HANDOFF_IDS.get(id))return json({status:"duplicate",task_id},409);
   await env.HANDOFF_IDS.put(id,"pending",{expirationTtl:86400});
-  const comment="## AI HANDOFF — "+escapeMd(agent_role.toUpperCase())+" / "+escapeMd(status)+"\\n\\n**Task:** "+escapeMd(task_id)+"\\n**Created:** "+escapeMd(created_at)+"\\n**Director approval required:** "+(director_approval_required?"YES":"NO")+"\\n\\n**Summary:** "+escapeMd(summary)+"\\n\\n**Evidence:**\\n"+(evidence.length?evidence.map(s=>"- "+escapeMd(s)).join("\\n"):"- None provided")+"\\n\\n**Blockers:** "+escapeMd(blockers)+"\\n\\n**Next action:** "+escapeMd(next_action)+"\\n\\n_Authenticated handoff; agent attribution is sender-asserted and claims require verification._";
+  const comment = [
+    "## AI HANDOFF — " + escapeMd(agent_role.toUpperCase()) + " / " + escapeMd(status),
+    "",
+    "**Task:** " + escapeMd(task_id),
+    "**Created:** " + escapeMd(created_at),
+    "**Director approval required:** " + (director_approval_required ? "YES" : "NO"),
+    "",
+    "**Summary:** " + escapeMd(summary),
+    "",
+    "**Evidence:**",
+    evidence.length ? evidence.map(s => "- " + escapeMd(s)).join("\n") : "- None provided",
+    "",
+    "**Blockers:** " + escapeMd(blockers),
+    "",
+    "**Next action:** " + escapeMd(next_action),
+    "",
+    "_Authenticated handoff; agent attribution is sender-asserted and claims require verification._",
+  ].join("\n");
   try{
    const response=await fetch("https://api.github.com/repos/contactdeleon/hospitality-ops-lab/issues/1/comments",{method:"POST",headers:{"authorization":"Bearer "+env.GITHUB_ISSUES_TOKEN,"accept":"application/vnd.github+json","x-github-api-version":"2022-11-28","user-agent":"ai-superfriends-gateway","content-type":"application/json"},body:JSON.stringify({body:comment})});
    if(!response.ok){await env.HANDOFF_IDS.delete(id);return json({error:"ledger_write_failed",status:response.status},502);}
@@ -52,5 +69,4 @@ export default {
    return json({status:"accepted",task_id,ledger_url:result.html_url},201);
   }catch{await env.HANDOFF_IDS.delete(id);return json({error:"ledger_unavailable"},502)}
  }
-}
 };
