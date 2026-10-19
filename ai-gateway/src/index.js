@@ -7,7 +7,7 @@ const enc = new TextEncoder();
 const json = (body,status=200) => new Response(JSON.stringify(body),{status,headers:{"content-type":"application/json; charset=utf-8","cache-control":"no-store","x-content-type-options":"nosniff"}});
 function hex(bytes){return [...new Uint8Array(bytes)].map(b=>b.toString(16).padStart(2,"0")).join("");}
 function safe(s,max){return typeof s==="string" && s.length>0 && s.length<=max;}
-function escapeMd(s){return s.replace(/[\\`*_{ }\[\]()#+.!|<>]/g,"\\$&");}
+function escapeMd(s){return s.replace(/[\\`*_{}\[\]()#+.!|<>]/g,"\\function escapeMd(s){return s.replace(/[\\`*_{ }\[\]()#+.!|<>]/g,"\\$&");}");}
 function hasSensitive(s){return /(?:gh[pousr]_[a-zA-Z0-9]{20,}|github_pat_[a-zA-Z0-9_]{20,}|sk_(?:live|test)_[a-zA-Z0-9]+|-----BEGIN [A-Z ]*PRIVATE KEY-----|\b(?:password|api[_ -]?key|access[_ -]?token|secret)\s*[:=]\s*\S+)/i.test(s);}
 async function verify(request,secret,body){
   const timestamp=request.headers.get("x-ai-timestamp");
