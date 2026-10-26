@@ -10,7 +10,7 @@ jobs:
     steps:
       - name: Verify Printify authentication and shops (GET only)
         env:
-          PRINTIFY_API_TOKEN: ${{ secrets.PRINTIFY_API_TOKEN }}
+          PRINTIFY_API_TOKEN: ${{ secrets.DELEON_MERCH_CO }}
         run: |
           set -euo pipefail
           python3 - <<'PY'
