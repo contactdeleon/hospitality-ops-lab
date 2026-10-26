@@ -15,6 +15,7 @@ jobs:
           TOKEN: ${{ secrets.PSPS_PRINTIFY_API_TOKEN }}
         run: |
           set -euo pipefail
+          python3 -m pip install --quiet pillow
           python3 - <<'PY'
           import os,json,urllib.request,urllib.error,base64,io,math
           from PIL import Image,ImageDraw,ImageFont
