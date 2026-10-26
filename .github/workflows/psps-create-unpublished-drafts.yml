@@ -1,0 +1,91 @@
+name: PSPS Unpublished Product Drafts
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  create-drafts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Create PSPS artwork and unpublished product drafts
+        env:
+          TOKEN: ${{ secrets.PSPS_PRINTIFY_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet --break-system-packages pillow
+          python3 - <<'PY'
+          import os,json,base64,urllib.request,urllib.error,io
+          from PIL import Image,ImageDraw,ImageFont
+          token=os.environ.get("TOKEN","")
+          if not token:raise SystemExit("PSPS token secret missing")
+          root="https://api.printify.com/v1/"
+          headers={"Authorization":"Bearer "+token,"Accept":"application/json","Content-Type":"application/json","User-Agent":"PSPS-DraftBuilder/1.0"}
+          def call(path,method="GET",body=None):
+              data=None if body is None else json.dumps(body).encode()
+              req=urllib.request.Request(root+path,headers=headers,data=data,method=method)
+              try:
+                  with urllib.request.urlopen(req,timeout=90) as resp:return json.load(resp)
+              except urllib.error.HTTPError as e:
+                  print("Printify request failed: HTTP",e.code,"on",method,path.split("?")[0])
+                  raise SystemExit(1)
+          shops=call("shops.json")
+          matches=[s for s in shops if any(t in str(s.get("title","")).lower() for t in ("palm springs podcast","psps"))]
+          if len(matches)!=1:raise SystemExit("PSPS shop identity not unique; no writes")
+          sid=matches[0]["id"]
+          existing=call(f"shops/{sid}/products.json").get("data",[])
+          def font(sz,bold=False):
+              return ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans"+("-Bold" if bold else "")+".ttf",sz)
+          orange=(255,146,46,255)
+          def art(back=False,cap=False):
+              w,h=(2400,1600) if cap else (4500,5400)
+              im=Image.new("RGBA",(w,h),(0,0,0,0));d=ImageDraw.Draw(im)
+              cx=w//2
+              py=440 if cap else (1600 if back else 1900)
+              scale=0.55 if cap else 1.0
+              rays=[(-120,-90),(-150,-15),(-70,-140),(75,-135),(145,-45),(130,45)]
+              for dx,dy in rays:
+                  d.line([(cx,py),(cx+int(dx*scale*3),py+int(dy*scale*3))],fill=orange,width=int(24*scale))
+              d.line([(cx,py),(cx-int(25*scale),py+int(175*scale))],fill=orange,width=int(22*scale))
+              ps=font(270 if cap else (620 if back else 470),True)
+              sy=700 if cap else (2500 if back else 2550)
+              d.text((cx,sy),"PSPS",font=ps,fill=orange,anchor="mm")
+              sub=font(48 if cap else 90)
+              d.text((cx,sy+(180 if cap else 390)),"PALM SPRINGS PODCAST STUDIO",font=sub,fill=orange,anchor="mm")
+              if not cap:
+                  tag=font(76)
+                  d.text((cx,sy+600),"YOUR VOICE. YOUR STORY. OUR STUDIO.",font=tag,fill=orange,anchor="mm")
+              out=io.BytesIO();im.save(out,format="PNG");return base64.b64encode(out.getvalue()).decode()
+          def upload(filename,contents):
+              response=call("uploads/images.json","POST",{"file_name":filename,"contents":contents})
+              if not response.get("id"):raise SystemExit("Image upload response missing ID")
+              print("Artwork uploaded:",filename)
+              return response["id"]
+          # Only one product initially: embroidery needs separate print-area validation.
+          title="PSPS Signature Tee | Your Voice. Your Story. Our Studio."
+          if any(p.get("title")==title for p in existing):
+              print("Existing PSPS Signature Tee detected; skipping duplicate creation")
+          else:
+              catalog=call("catalog/blueprints/12/print_providers/99/variants.json")
+              variants=[v for v in catalog.get("variants",[]) if str(v.get("title","")).startswith("Black /")]
+              if not variants:raise SystemExit("Black shirt variants not found")
+              front=upload("psps_signature_tee_front_v1.png",art())
+              back=upload("psps_signature_tee_back_v1.png",art(back=True))
+              ids=[v["id"] for v in variants]
+              body={
+                "title":title,
+                "description":"Official Palm Springs Podcast Studio merchandise. Black unisex jersey tee with Island Orange artwork. Your Voice. Your Story. Our Studio.",
+                "blueprint_id":12,"print_provider_id":99,
+                "variants":[{"id":v["id"],"price":3200,"is_enabled":True} for v in variants],
+                "print_areas":[{"variant_ids":ids,"placeholders":[
+                  {"position":"front","images":[{"id":front,"x":0.5,"y":0.5,"scale":0.65,"angle":0}]},
+                  {"position":"back","images":[{"id":back,"x":0.5,"y":0.5,"scale":0.75,"angle":0}]}
+                ]}]
+              }
+              result=call(f"shops/{sid}/products.json","POST",body)
+              if not result.get("id"):raise SystemExit("Product creation returned no ID")
+              print("Created unpublished tee draft. Product ID:",result["id"])
+              print("Retail price configured: $32.00; actual production cost unverified.")
+          print("No publish or order endpoints called.")
+          print("Cap remains pending embroidery method and placeholder validation.")
+          PY
