@@ -62,7 +62,7 @@ jobs:
               return r["id"]
           front=upload("psps_left_chest_v2.png",False)
           back=upload("psps_large_back_v2.png",True)
-          ids=[v["id"] for v in p["variants"] if v.get("is_enabled")]
+          ids=[v["id"] for v in p["variants"]]
           if not ids:raise SystemExit("No enabled variants")
           areas=[{"variant_ids":ids,"placeholders":[
             {"position":"front","images":[{"id":front,"x":0.26,"y":0.26,"scale":0.22,"angle":0}]},
