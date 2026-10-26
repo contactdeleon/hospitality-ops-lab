@@ -1,0 +1,45 @@
+name: PSPS Cap Production Feasibility
+on:
+  push:
+    paths:
+      - .github/workflows/psps-cap-feasibility.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Inspect cap production and existing tee
+        env:
+          TOKEN: ${{ secrets.PSPS_PRINTIFY_API_TOKEN }}
+        run: |
+          python3 - <<'PY'
+          import os,json,urllib.request,urllib.error
+          token=os.environ["TOKEN"]
+          h={"Authorization":"Bearer "+token,"Accept":"application/json","User-Agent":"PSPS-CapFeasibility/1.0"}
+          def get(path):
+              r=urllib.request.Request("https://api.printify.com/v1/"+path,headers=h)
+              try:
+                  with urllib.request.urlopen(r,timeout=30) as f:return json.load(f)
+              except urllib.error.HTTPError as e:
+                  print("HTTP",e.code,"for",path);return {}
+          shops=get("shops.json")
+          matches=[s for s in shops if "palm springs podcast" in str(s.get("title","")).lower() or "psps" in str(s.get("title","")).lower()]
+          if len(matches)!=1:raise SystemExit("PSPS shop ambiguous")
+          sid=matches[0]["id"]
+          tee=get(f"shops/{sid}/products/6adf999078edb91ce70d2430.json")
+          print("Tee verified:",bool(tee.get("id")),"published:",tee.get("visible"),"variant count:",len(tee.get("variants",[])),"print areas:",len(tee.get("print_areas",[])))
+          providers=get("catalog/blueprints/1447/print_providers.json")
+          for p in providers if isinstance(providers,list) else providers.get("data",[]):
+              print("Cap provider:",p.get("id"),p.get("title"))
+          for pid in (99,217,410):
+              detail=get(f"catalog/blueprints/1447/print_providers/{pid}.json")
+              print("Provider",pid,"detail keys:",list(detail.keys()),"title:",detail.get("title"))
+              variants=get(f"catalog/blueprints/1447/print_providers/{pid}/variants.json")
+              black=[v for v in variants.get("variants",[]) if "black" in str(v.get("title","")).lower()]
+              print("Provider",pid,"black variant IDs:",[v.get("id") for v in black][:12])
+              print("Provider",pid,"variant fields:",list(black[0].keys()) if black else [])
+              print("Provider",pid,"print detail:",json.dumps({k:detail.get(k) for k in ("print_areas","print_details","location","type","techniques") if k in detail})[:1000])
+          print("Read-only feasibility complete. No uploads, drafts, publication, or orders.")
+          PY
