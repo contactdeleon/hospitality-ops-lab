@@ -1,0 +1,47 @@
+name: Verify Printify Read-Only Connection
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify-printify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Verify Printify authentication and shops (GET only)
+        env:
+          PRINTIFY_API_TOKEN: ${{ secrets.PRINTIFY_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os, urllib.request, urllib.error
+          token = os.environ.get("PRINTIFY_API_TOKEN", "")
+          if not token:
+              raise SystemExit("Missing PRINTIFY_API_TOKEN repository secret.")
+          request = urllib.request.Request(
+              "https://api.printify.com/v1/shops.json",
+              headers={
+                  "Authorization": "Bearer " + token,
+                  "Accept": "application/json",
+                  "User-Agent": "DeLeonGroup-PrintifyVerifier/1.0",
+              },
+              method="GET",
+          )
+          try:
+              with urllib.request.urlopen(request, timeout=20) as response:
+                  if response.status != 200:
+                      raise SystemExit("Unexpected Printify response status.")
+                  shops = json.load(response)
+                  if not isinstance(shops, list):
+                      raise SystemExit("Unexpected Printify response structure.")
+                  print("Printify authentication: successful")
+                  print("Accessible shop count:", len(shops))
+                  # Deliberately omit shop IDs, names, and all customer/product data from public logs.
+                  with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as f:
+                      f.write("### Printify read-only verification\n\nAuthentication succeeded.\n\nAccessible shop count: " + str(len(shops)) + "\n\nNo mutations performed.\n")
+          except urllib.error.HTTPError as error:
+              print("Printify authentication failed with HTTP status:", error.code)
+              raise SystemExit(1)
+          except urllib.error.URLError:
+              raise SystemExit("Printify network request failed.")
+          PY
