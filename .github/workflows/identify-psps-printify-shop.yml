@@ -1,0 +1,40 @@
+name: Identify PSPS Printify Shop (Read Only)
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  identify-shop:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Classify accessible Printify shop without exposing identifiers
+        env:
+          PSPS_PRINTIFY_API_TOKEN: ${{ secrets.PSPS_PRINTIFY_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os, urllib.request, urllib.error
+          token=os.environ.get("PSPS_PRINTIFY_API_TOKEN","")
+          if not token:
+              raise SystemExit("Missing PSPS_PRINTIFY_API_TOKEN repository secret")
+          req=urllib.request.Request("https://api.printify.com/v1/shops.json",
+            headers={"Authorization":"Bearer "+token,"Accept":"application/json","User-Agent":"PSPS-ShopDiscovery/1.0"})
+          try:
+              with urllib.request.urlopen(req,timeout=20) as resp:
+                  shops=json.load(resp)
+          except urllib.error.HTTPError as exc:
+              raise SystemExit("Printify returned HTTP "+str(exc.code))
+          if not isinstance(shops,list):
+              raise SystemExit("Unexpected Printify response")
+          print("Accessible shops:",len(shops))
+          matches=[]
+          for shop in shops:
+              title=str(shop.get("title","")).lower()
+              if "palm springs podcast" in title or "psps" in title:
+                  matches.append(shop)
+          classification="PSPS shop detected" if len(matches)==1 else ("Multiple possible PSPS shops" if len(matches)>1 else "No clearly named PSPS shop")
+          print("Shop classification:",classification)
+          with open(os.environ["GITHUB_STEP_SUMMARY"],"a") as f:
+              f.write("### PSPS shop discovery\n\n"+classification+"\n\nAccessible shops: "+str(len(shops))+"\n\nNo shop IDs, names, tokens or products disclosed. No changes made.\n")
+          PY
