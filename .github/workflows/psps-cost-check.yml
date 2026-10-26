@@ -21,5 +21,5 @@ jobs:
                   data=json.load(response)
               for v in data.get("variants",[]):
                   if str(v.get("title","")).lower().startswith("black /"):
-                      print("Blueprint",bp,"variant",v.get("id"),"title",v.get("title"),"cost",v.get("cost"))
+                      print("Blueprint",bp,"variant",v.get("id"),"title",v.get("title"),"catalog_price_cents",v.get("price"),"cost",v.get("cost"))
           PY
