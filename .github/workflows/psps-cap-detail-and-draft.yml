@@ -1,0 +1,60 @@
+name: PSPS Cap Draft
+on:
+  push:
+    paths:
+      - .github/workflows/psps-cap-detail-and-draft.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  create-cap:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate decoration and create unpublished cap
+        env:
+          TOKEN: ${{ secrets.PSPS_PRINTIFY_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os,json,urllib.request,urllib.error,base64,io
+          from PIL import Image,ImageDraw,ImageFont
+          base="https://api.printify.com/v1/"
+          h={"Authorization":"Bearer "+os.environ["TOKEN"],"Accept":"application/json","Content-Type":"application/json","User-Agent":"PSPS-CapBuilder/1.0"}
+          def api(path,method="GET",body=None):
+              req=urllib.request.Request(base+path,headers=h,data=None if body is None else json.dumps(body).encode(),method=method)
+              try:
+                  with urllib.request.urlopen(req,timeout=60) as response:return json.load(response)
+              except urllib.error.HTTPError as e:
+                  print("API HTTP",e.code,"path",path,"response",e.read(400).decode(errors="replace"))
+                  raise SystemExit(1)
+          shops=api("shops.json")
+          candidates=[s for s in shops if "palm springs podcast" in str(s.get("title","")).lower() or "psps" in str(s.get("title","")).lower()]
+          if len(candidates)!=1:raise SystemExit("No unique PSPS shop")
+          sid=candidates[0]["id"]
+          existing=api(f"shops/{sid}/products.json").get("data",[])
+          title="PSPS Studio Cap | Island Orange"
+          if any(x.get("title")==title for x in existing):
+              print("Cap already exists; not creating a duplicate")
+              raise SystemExit(0)
+          info=api("catalog/blueprints/1447/print_providers/99.json")
+          variants=api("catalog/blueprints/1447/print_providers/99/variants.json")
+          black=[x for x in variants.get("variants",[]) if x.get("id")==105372]
+          if len(black)!=1:raise SystemExit("Black cap variant not found")
+          v=black[0]
+          print("Decoration method data:",json.dumps({"provider":info.get("decoration_methods"),"variant":v.get("decoration_methods"),"placeholders":v.get("placeholders")})[:2500])
+          positions=[x.get("position") for x in v.get("placeholders",[]) if isinstance(x,dict)]
+          if "front" not in positions:
+              print("Front print area unconfirmed; no draft created.")
+              raise SystemExit(0)
+          im=Image.new("RGBA",(2400,1600),(0,0,0,0));draw=ImageDraw.Draw(im)
+          orange=(255,146,46,255)
+          f=ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",500)
+          draw.text((1200,800),"PSPS",font=f,fill=orange,anchor="mm")
+          b=io.BytesIO();im.save(b,"PNG")
+          upload=api("uploads/images.json","POST",{"file_name":"psps_studio_cap_logo_v1.png","contents":base64.b64encode(b.getvalue()).decode()})
+          if not upload.get("id"):raise SystemExit("Cap image upload failed")
+          data={"title":title,"description":"Palm Springs Podcast Studio black classic dad cap with Island Orange PSPS mark.","blueprint_id":1447,"print_provider_id":99,"variants":[{"id":105372,"price":2900,"is_enabled":True}],"print_areas":[{"variant_ids":[105372],"placeholders":[{"position":"front","images":[{"id":upload["id"],"x":0.5,"y":0.5,"scale":0.5,"angle":0}]}]}]}
+          product=api(f"shops/{sid}/products.json","POST",data)
+          print("Cap draft created:",product.get("id"),"published status:",product.get("is_published"),"price $29.00 tentative")
+          print("Publishing and orders not requested.")
+          PY
