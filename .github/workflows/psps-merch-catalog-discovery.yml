@@ -1,0 +1,51 @@
+name: PSPS Merchandise Catalog Discovery
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Inspect PSPS shop and apparel catalog (GET only)
+        env:
+          PSPS_PRINTIFY_API_TOKEN: ${{ secrets.PSPS_PRINTIFY_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os,json,urllib.request,urllib.error
+          token=os.environ.get("PSPS_PRINTIFY_API_TOKEN","")
+          if not token: raise SystemExit("Missing PSPS token secret")
+          def get(path):
+              req=urllib.request.Request("https://api.printify.com/v1/"+path,
+                  headers={"Authorization":"Bearer "+token,"Accept":"application/json","User-Agent":"PSPS-CatalogDiscovery/1.0"})
+              with urllib.request.urlopen(req,timeout=30) as response: return json.load(response)
+          shops=get("shops.json")
+          matches=[s for s in shops if any(k in str(s.get("title","")).lower() for k in ("palm springs podcast","psps"))]
+          if len(matches)!=1: raise SystemExit("Expected exactly one PSPS-named shop; no catalog queries performed")
+          shop=matches[0]
+          shop_id=shop.get("id")
+          if not isinstance(shop_id,(str,int)): raise SystemExit("Shop ID missing")
+          products=get("shops/"+str(shop_id)+"/products.json")
+          data=products.get("data",[]) if isinstance(products,dict) else []
+          blueprints=get("catalog/blueprints.json")
+          if not isinstance(blueprints,list): raise SystemExit("Unexpected catalog format")
+          def choose(words):
+              return [b for b in blueprints if any(w in str(b.get("title","")).lower() for w in words)][:8]
+          shirts=choose(("t-shirt","tee","shirt"))
+          hats=choose(("cap","hat"))
+          def titles(items):
+              return ", ".join(str(x.get("title","Unnamed")) for x in items) or "None found"
+          lines=[
+              "### PSPS merchandise discovery",
+              "PSPS shop uniquely matched: yes",
+              "Existing product count (first page): "+str(len(data)),
+              "Shirt blueprints: "+titles(shirts),
+              "Hat blueprints: "+titles(hats),
+              "No product drafts, orders, or storefront changes made.",
+              "No token, shop ID, or customer information exposed."
+          ]
+          for line in lines: print(line)
+          with open(os.environ["GITHUB_STEP_SUMMARY"],"a") as f: f.write("\n\n".join(lines)+"\n")
+          PY
