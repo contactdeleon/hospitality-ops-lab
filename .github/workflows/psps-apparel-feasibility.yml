@@ -1,0 +1,45 @@
+name: PSPS Apparel Provider and Variant Discovery
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Compare providers and variants (read-only)
+        env:
+          PSPS_PRINTIFY_API_TOKEN: ${{ secrets.PSPS_PRINTIFY_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,os,urllib.request,urllib.error
+          token=os.environ.get("PSPS_PRINTIFY_API_TOKEN","")
+          if not token: raise SystemExit("PSPS secret missing")
+          def get(path):
+              req=urllib.request.Request("https://api.printify.com/v1/"+path,headers={"Authorization":"Bearer "+token,"Accept":"application/json","User-Agent":"PSPS-VariantDiscovery/1.0"})
+              with urllib.request.urlopen(req,timeout=25) as r:return json.load(r)
+          shops=get("shops.json")
+          matches=[s for s in shops if any(k in str(s.get("title","")).lower() for k in ("palm springs podcast","psps"))]
+          if len(matches)!=1:raise SystemExit("PSPS shop not uniquely identified")
+          blueprints=get("catalog/blueprints.json")
+          targets=["Unisex Heavy Cotton Tee","Unisex Jersey Short Sleeve Tee","Classic Dad Cap","Low Profile Baseball Cap"]
+          lines=["### PSPS product feasibility (read-only)"]
+          for title in targets:
+              candidates=[b for b in blueprints if str(b.get("title","")).strip().lower()==title.lower()]
+              if len(candidates)!=1:
+                  lines.append(title+": blueprint match count "+str(len(candidates)));continue
+              bp=candidates[0];bid=bp["id"]
+              providers=get("catalog/blueprints/"+str(bid)+"/print_providers.json")
+              lines.append("**"+title+"** — blueprint ID "+str(bid)+"; providers "+str(len(providers)))
+              for p in providers[:5]:
+                  pid=p["id"]
+                  variants=get("catalog/blueprints/"+str(bid)+"/print_providers/"+str(pid)+"/variants.json")
+                  arr=variants.get("variants",[]) if isinstance(variants,dict) else []
+                  black=[v for v in arr if "black" in str(v.get("title","")).lower()]
+                  lines.append("- "+str(p.get("title","Provider"))+" (provider "+str(pid)+"): "+str(len(arr))+" variants, "+str(len(black))+" black variants; samples: "+", ".join(str(v.get("title","")) for v in black[:3]))
+          lines.append("No prices inferred. No products, uploads, orders or publications created.")
+          for line in lines:print(line)
+          with open(os.environ["GITHUB_STEP_SUMMARY"],"a") as f:f.write("\n\n".join(lines)+"\n")
+          PY
