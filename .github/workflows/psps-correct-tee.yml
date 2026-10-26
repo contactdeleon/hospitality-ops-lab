@@ -1,0 +1,75 @@
+name: Correct PSPS Tee Artwork
+on:
+  push:
+    paths:
+      - .github/workflows/psps-correct-tee.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  correct:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Update existing tee front and back print areas
+        env:
+          TOKEN: ${{ secrets.PSPS_PRINTIFY_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os,json,urllib.request,urllib.error,base64,io,math
+          from PIL import Image,ImageDraw,ImageFont
+          base="https://api.printify.com/v1/"
+          headers={"Authorization":"Bearer "+os.environ["TOKEN"],"Content-Type":"application/json","Accept":"application/json","User-Agent":"PSPS-TeeCorrection/1.0"}
+          def api(path,method="GET",body=None):
+              req=urllib.request.Request(base+path,headers=headers,data=None if body is None else json.dumps(body).encode(),method=method)
+              try:
+                  with urllib.request.urlopen(req,timeout=90) as r:return json.load(r)
+              except urllib.error.HTTPError as e:
+                  print("API error",e.code,"method",method,"path",path,"detail",e.read(500).decode(errors="replace"));raise SystemExit(1)
+          shops=api("shops.json")
+          s=[x for x in shops if "palm springs podcast" in str(x.get("title","")).lower() or "psps" in str(x.get("title","")).lower()]
+          if len(s)!=1:raise SystemExit("Shop ambiguous")
+          sid=s[0]["id"];pid="6adf999078edb91ce70d2430"
+          p=api(f"shops/{sid}/products/{pid}.json")
+          if p.get("blueprint_id")!=12 or p.get("print_provider_id")!=99:raise SystemExit("Unexpected product configuration; no update")
+          orange=(255,146,46,255)
+          def font(n,bold=False):
+              return ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans"+("-Bold" if bold else "")+".ttf",n)
+          def render(back):
+              im=Image.new("RGBA",(2200,2600) if back else (1400,1400),(0,0,0,0))
+              d=ImageDraw.Draw(im);w,h=im.size;cx=w//2
+              if back:
+                  ox,oy=cx,690
+                  for deg in (-165,-135,-105,-75,-45,-15,15):
+                      a=math.radians(deg)
+                      d.line([(ox,oy),(ox+int(math.cos(a)*410),oy+int(math.sin(a)*350))],fill=orange,width=30)
+                  d.line([(ox,oy),(ox-45,oy+400)],fill=orange,width=28)
+                  d.text((cx,1420),"PSPS",font=font(420,True),fill=orange,anchor="mm")
+                  d.text((cx,1710),"PALM SPRINGS PODCAST STUDIO",font=font(65),fill=orange,anchor="mm")
+                  d.text((cx,1910),"YOUR VOICE. YOUR STORY. OUR STUDIO.",font=font(54),fill=orange,anchor="mm")
+              else:
+                  d.text((cx,660),"PSPS",font=font(335,True),fill=orange,anchor="mm")
+                  d.text((cx,850),"PALM SPRINGS",font=font(66),fill=orange,anchor="mm")
+              box=im.getbbox()
+              if not box:raise SystemExit("Empty artwork")
+              im=im.crop((max(0,box[0]-80),max(0,box[1]-80),min(w,box[2]+80),min(h,box[3]+80)))
+              b=io.BytesIO();im.save(b,"PNG");return base64.b64encode(b.getvalue()).decode()
+          def upload(name,back):
+              r=api("uploads/images.json","POST",{"file_name":name,"contents":render(back)})
+              if not r.get("id"):raise SystemExit("Upload missing ID")
+              print("Uploaded corrected artwork",name)
+              return r["id"]
+          front=upload("psps_left_chest_v2.png",False)
+          back=upload("psps_large_back_v2.png",True)
+          ids=[v["id"] for v in p["variants"] if v.get("is_enabled")]
+          if not ids:raise SystemExit("No enabled variants")
+          areas=[{"variant_ids":ids,"placeholders":[
+            {"position":"front","images":[{"id":front,"x":0.26,"y":0.26,"scale":0.22,"angle":0}]},
+            {"position":"back","images":[{"id":back,"x":0.5,"y":0.48,"scale":0.78,"angle":0}]}
+          ]}]
+          body={k:p[k] for k in ("title","description","blueprint_id","print_provider_id","variants") if k in p}
+          body["print_areas"]=areas
+          result=api(f"shops/{sid}/products/{pid}.json","PUT",body)
+          print("Existing tee updated:",result.get("id"),"front left-chest x=0.26 y=0.26 scale=0.22; back centered scale=0.78")
+          print("No publish, orders, or new products requested.")
+          PY
