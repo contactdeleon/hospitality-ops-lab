@@ -1,0 +1,41 @@
+name: Verify PSPS Printify API (Read Only)
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify-psps:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Check PSPS token and list accessible shops
+        env:
+          PSPS_PRINTIFY_API_TOKEN: ${{ secrets.PSPS_PRINTIFY_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os, urllib.request, urllib.error
+          token = os.environ.get("PSPS_PRINTIFY_API_TOKEN", "")
+          if not token:
+              raise SystemExit("PSPS_PRINTIFY_API_TOKEN secret is missing or empty.")
+          req = urllib.request.Request(
+              "https://api.printify.com/v1/shops.json",
+              headers={"Authorization": "Bearer " + token,
+                       "Accept": "application/json",
+                       "User-Agent": "PSPS-PrintifyVerifier/1.0"},
+              method="GET")
+          try:
+              with urllib.request.urlopen(req, timeout=20) as response:
+                  shops = json.load(response)
+                  if not isinstance(shops, list):
+                      raise SystemExit("Unexpected response format.")
+                  print("PSPS token authentication: successful")
+                  print("Accessible shop count:", len(shops))
+                  # Do not log names, IDs, tokens, products, or customer information.
+                  with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as f:
+                      f.write("### PSPS Printify API verification\n\nAuthentication: successful\n\nAccessible shops: " + str(len(shops)) + "\n\nRead-only; no store changes.\n")
+          except urllib.error.HTTPError as e:
+              raise SystemExit("Printify API returned HTTP " + str(e.code))
+          except urllib.error.URLError:
+              raise SystemExit("Unable to reach Printify API.")
+          PY
