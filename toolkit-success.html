@@ -1,0 +1,19 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><meta name="referrer" content="no-referrer"><title>Toolkit Download | Hospitality Ops Lab</title><style>body{font:16px/1.6 system-ui,sans-serif;background:#08111c;color:#f7f9fb;margin:0;padding:48px 20px}main{max-width:600px;margin:auto}button{background:#ff922e;color:#101010;border:0;padding:14px 20px;border-radius:8px;font-weight:700;cursor:pointer}button:disabled{opacity:.5}p{color:#b8c5d3}a{color:#ffc17f}</style></head><body><main><h1>Hospitality Manager Toolkit</h1><p id="status" role="status">Checking your checkout confirmation…</p><button id="download" disabled>Download your Toolkit ZIP</button><p>Need help? <a href="mailto:contactdeleon@gmail.com?subject=Toolkit%20delivery%20help">Contact support</a> using your purchase email. Never share your checkout session link.</p></main><script>
+const status=document.getElementById('status'),button=document.getElementById('download');
+const sessionId=new URLSearchParams(location.search).get('session_id');
+history.replaceState({},'',location.pathname);
+if(!sessionId||!/^cs_(test_)?[A-Za-z0-9]+$/.test(sessionId)){status.textContent='Checkout confirmation missing. Please contact support.'}
+else{status.textContent='Select download to verify your payment and retrieve your files.';button.disabled=false}
+button.addEventListener('click',async()=>{
+ button.disabled=true;status.textContent='Verifying your payment…';
+ try{
+  const response=await fetch('/api/toolkit-download',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:sessionId}),cache:'no-store'});
+  if(!response.ok)throw Error('Secure delivery is unavailable. Please contact support using your purchase email.');
+  const blob=await response.blob();
+  if(blob.size<1000)throw Error('File verification failed. Please contact support.');
+  const url=URL.createObjectURL(blob),a=document.createElement('a');
+  a.href=url;a.download='Hospitality_Manager_Toolkit_v2_2_8_Five_File_Package.zip';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),10000);
+  status.textContent='Your Toolkit download has started.';
+ }catch(e){status.textContent=e.message;button.disabled=false}
+});
+</script></body></html>
