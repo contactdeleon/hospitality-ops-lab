@@ -28,8 +28,28 @@ export default async function handler(req, res) {
   if (session?.mode !== 'payment' || session?.payment_status !== 'paid' || session?.amount_total !== 4900 || session?.currency !== 'usd') {
     return res.status(200).json({ received: true, fulfilled: false });
   }
-  // A checkout session's line items must be retrieved server-side and verified against TOOLKIT_PRICE_ID.
-  // Do not return a download or acknowledge fulfillment until durable, idempotent entitlement
-  // storage and private signed-file delivery are implemented.
-  return res.status(503).json({ error: 'Fulfillment pending configuration', expected_price: TOOLKIT_PRICE_ID });
+  // Verify the actual purchased line items, not customer-controlled metadata.
+  const apiKey = process.env.STRIPE_SECRET_KEY;
+  if (!apiKey || !session?.id || !/^cs_(test_)?[A-Za-z0-9]+$/.test(session.id)) {
+    return res.status(503).json({ error: 'Fulfillment not configured' });
+  }
+  let lines;
+  try {
+    const response = await fetch('https://api.stripe.com/v1/checkout/sessions/' +
+      encodeURIComponent(session.id) + '/line_items?limit=100', {
+      headers: { Authorization: 'Bearer ' + apiKey }
+    });
+    if (!response.ok) return res.status(503).json({ error: 'Payment verification unavailable' });
+    lines = await response.json();
+  } catch {
+    return res.status(503).json({ error: 'Payment verification unavailable' });
+  }
+  if (lines?.has_more || lines?.data?.length !== 1 ||
+      lines.data[0]?.price?.id !== TOOLKIT_PRICE_ID ||
+      lines.data[0]?.quantity !== 1) {
+    return res.status(200).json({ received: true, fulfilled: false });
+  }
+  // Deliberately fail closed until idempotent entitlements, private storage and
+  // customer delivery are configured and tested. Stripe retries non-2xx events.
+  return res.status(503).json({ error: 'Fulfillment pending configuration' });
 }
